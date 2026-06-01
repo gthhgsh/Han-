@@ -1,0 +1,233 @@
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/gycgchgyfytdttr/shenqin/refs/heads/main/ui.lua"))()
+
+local Window = WindUI:CreateWindow({
+    Title = '成为恐龙',
+    Icon = "crown",
+    IconThemed = true,
+    Author = "",
+    Folder = "CloudHub",
+    Size = UDim2.fromOffset(300, 200),
+    Transparent = true,
+    Theme = "Midnight",
+    HideSearchBar = false,
+    ScrollBarEnabled = true,
+    Resizable = true,
+    Background = "https://raw.githubusercontent.com/SQ182/y/c55acfcf047f4ac75d72fad5a39000c020afd024/image_download_1769957292011.jpg",
+    BackgroundImageTransparency = 0.5,
+    User = {
+        Enabled = true,
+        Callback = function()
+            WindUI:Notify({
+                Title = "点击了自己",
+                Content = "没什么", 
+                Duration = 1,
+                Icon = "4483362748"
+            })
+        end,
+        Anonymous = false
+    },
+    SideBarWidth = 250,
+    Search = {
+        Enabled = true,
+        Placeholder = "搜索...",
+        Callback = function(searchText)
+        end
+    },
+    SidePanel = {
+        Enabled = true,
+        Content = {
+            {
+                Type = "Button", 
+                Text = "",
+                Style = "Subtle", 
+                Size = UDim2.new(1, -20, 0, 30),
+                Callback = function()
+                end
+            }
+        }
+    }
+})
+
+Window:Tag({
+    Title = "成为恐龙",
+    Icon = "skull",
+    IconColor = Color3.fromHex("#FF1493"),
+    Color = Color3.fromHex("#1C1C1C"),
+    Border = true,
+    BorderColor = Color3.fromHex("#FF1493"),
+    IconShape = "Square"
+})
+
+Window:EditOpenButton({
+    Title = "成为恐龙",
+    Icon = "gem",
+    CornerRadius = UDim.new(0, 16), 
+    Size = UDim2.new(0, 140, 0, 48), 
+    StrokeThickness = 3,
+    StrokeColor = Color3.fromRGB(0, 50, 255),
+    Color = ColorSequence.new(
+        Color3.fromRGB(255, 255, 255),
+        Color3.fromRGB(240, 240, 255),
+        Color3.fromRGB(0, 30, 200),
+        Color3.fromRGB(0, 10, 150)
+    ),
+    BackgroundColor = Color3.fromRGB(0, 15, 60),
+    BackgroundTransparency = 0.1,
+    Draggable = true,
+})
+
+local buttonFrame = Window.OpenButtonMain.Button
+local stroke = buttonFrame:FindFirstChild("UIStroke")
+if stroke then
+    local gradient = stroke:FindFirstChildOfClass("UIGradient")
+    if gradient then
+        gradient.Color = ColorSequence.new(
+            Color3.fromRGB(255,255,255),
+            Color3.fromRGB(0,30,200),
+            Color3.fromRGB(0,10,150),
+            Color3.fromRGB(255,255,255)
+        )
+        game:GetService("RunService").RenderStepped:Connect(function(deltaTime)
+            gradient.Rotation = (gradient.Rotation + 60 * deltaTime) % 360
+        end)
+    end
+end
+
+local MainTab = Window:Tab({
+    Title = "自动捡恐龙蛋",
+    Icon = "zap",
+    IconColor = Color3.fromHex("#FFD700"),
+    IconShape = "Square",
+    Border = true
+})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CollectionService = game:GetService("CollectionService")
+local player = Players.LocalPlayer
+
+local running = false
+local tweenSpeed = 100
+local moverConn = nil
+
+local function getHRP()
+    local char = player.Character
+    if not char then return nil end
+    for _, v in ipairs(char:GetChildren()) do
+        if v.Name == "HumanoidRootPart" or v.Name == "RootPart" then
+            return v
+        end
+    end
+    return char.PrimaryPart
+end
+
+
+local function isEgg(instance)
+    if not instance then return false end
+    local name = instance.Name:lower()
+    local keywords = {"egg", "蛋", "dinoegg", "dino_egg", "nest"}
+    for _, kw in ipairs(keywords) do
+        if name:find(kw) then
+            return true
+        end
+    end
+
+    if CollectionService:HasTag(instance, "Egg") then
+        return true
+    end
+    return false
+end
+
+local function getClosestEgg()
+    local hrp = getHRP()
+    if not hrp then return nil end
+    local best, bestDist = nil, math.huge
+
+
+    for _, food in CollectionService:GetTagged("Food") do
+        if not food or not food.Parent then continue end
+        if isEgg(food) then
+            local ok, pos = pcall(function()
+                if food:IsA("Model") then return food:GetPivot().Position
+                elseif food:IsA("BasePart") then return food.Position end
+            end)
+            if ok and pos then
+                local d = (hrp.Position - pos).Magnitude
+                if d < bestDist then
+                    bestDist = d
+                    best = {instance = food, position = pos}
+                end
+            end
+        end
+    end
+
+
+    for _, egg in CollectionService:GetTagged("Egg") do
+        if not egg or not egg.Parent then continue end
+        local ok, pos = pcall(function()
+            if egg:IsA("Model") then return egg:GetPivot().Position
+            elseif egg:IsA("BasePart") then return egg.Position end
+        end)
+        if ok and pos then
+            local d = (hrp.Position - pos).Magnitude
+            if d < bestDist then
+                bestDist = d
+                best = {instance = egg, position = pos}
+            end
+        end
+    end
+
+    return best
+end
+
+local function stopMover()
+    if moverConn then moverConn:Disconnect(); moverConn = nil end
+end
+
+local function moveTo(targetPos)
+    local reached = false
+    stopMover()
+    moverConn = RunService.Heartbeat:Connect(function(dt)
+        local hrp = getHRP()
+        if not hrp or not running then reached = true; stopMover(); return end
+        local diff = targetPos - hrp.Position
+        local dist = diff.Magnitude
+        if dist < 2 then reached = true; stopMover(); return end
+        local step = math.min(tweenSpeed * dt, dist)
+        hrp.CFrame = CFrame.new(hrp.Position + diff.Unit * step)
+    end)
+    while not reached do task.wait(0.05) end
+end
+
+local function collectLoop()
+    while running do
+        local egg = getClosestEgg()
+        if egg then
+            moveTo(egg.position)
+        end
+        task.wait(0.2)
+结束
+结束
+
+maintab：切换({
+标题="开启自动捡恐龙蛋"，
+默认值=false，
+回调=函数(状态)
+运行=状态
+如果说明，则
+task.spawn(collectLoop)
+WindUI：通知({Title="已开启"，内容="自动寻找恐龙蛋"，持续时间=1})
+其他
+stopMover()
+WindUI：通知({Title="已关闭"，内容="停止自动收集"，持续时间=1})
+结束
+结束
+})
+
+maintab：滑块({
+标题="移动速度调太快了会掉虚空[建设调到80-200]，
+值={最小值=10，最大值=500，默认值=100}，
+callback=函数(值)
+tweenSpeed=value
+结束
+})
