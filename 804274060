@@ -93,23 +93,13 @@ if stroke then
     end
 end
 
-local MainTab = Window:Tab({
-    Title = "自动捡恐龙蛋",
-    Icon = "zap",
-    IconColor = Color3.fromHex("#FFD700"),
-    IconShape = "Square",
-    Border = true
-})
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
+local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 
-local running = false
-local tweenSpeed = 100
-local moverConn = nil
-
+-- ==================== 公共函数 ====================
 local function getHRP()
     local char = player.Character
     if not char then return nil end
@@ -121,6 +111,25 @@ local function getHRP()
     return char.PrimaryPart
 end
 
+local function getRootPart(char)
+    if not char then return nil end
+    local r = char:FindFirstChild("RootPart")
+    if r and r:IsA("BasePart") then return r end
+    r = char:FindFirstChild("HumanoidRootPart")
+    if r and r:IsA("BasePart") then return r end
+    r = char.PrimaryPart
+    if r and r:IsA("BasePart") then return r end
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("BasePart") and v.Name ~= "FoodCollectionRadius" and v.Name ~= "CameraSubject" then
+            return v
+        end
+    end
+    return nil
+end
+
+local function getMyRoot()
+    return getRootPart(player.Character)
+end
 
 local function isEgg(instance)
     if not instance then return false end
@@ -131,18 +140,56 @@ local function isEgg(instance)
             return true
         end
     end
-
     if CollectionService:HasTag(instance, "Egg") then
         return true
     end
     return false
 end
 
-local function getClosestEgg()
+local function getEggs()
+    local eggs = {}
+    for _, obj in ipairs(CollectionService:GetTagged("Food")) do
+        if isEgg(obj) and obj.Parent then
+            local ok, pos = pcall(function()
+                if obj:IsA("Model") then return obj:GetPivot().Position
+                elseif obj:IsA("BasePart") then return obj.Position end
+            end)
+            if ok and pos then
+                table.insert(eggs, {instance = obj, position = pos})
+            end
+        end
+    end
+    for _, obj in ipairs(CollectionService:GetTagged("Egg")) do
+        if obj.Parent then
+            local ok, pos = pcall(function()
+                if obj:IsA("Model") then return obj:GetPivot().Position
+                elseif obj:IsA("BasePart") then return obj.Position end
+            end)
+            if ok and pos then
+                table.insert(eggs, {instance = obj, position = pos})
+            end
+        end
+    end
+    return eggs
+end
+
+-- ==================== 自动捡恐龙蛋（慢 - 平移）====================
+local SlowTab = Window:Tab({
+    Title = "自动捡恐龙蛋（慢）",
+    Icon = "turtle",
+    IconColor = Color3.fromHex("#90EE90"),
+    IconShape = "Square",
+    Border = true
+})
+
+local slowRunning = false
+local slowSpeed = 100
+local slowMoverConn = nil
+
+local function getClosestEggSlow()
     local hrp = getHRP()
     if not hrp then return nil end
     local best, bestDist = nil, math.huge
-
 
     for _, food in CollectionService:GetTagged("Food") do
         if not food or not food.Parent then continue end
@@ -160,7 +207,6 @@ local function getClosestEgg()
             end
         end
     end
-
 
     for _, egg in CollectionService:GetTagged("Egg") do
         if not egg or not egg.Parent then continue end
@@ -180,54 +226,448 @@ local function getClosestEgg()
     return best
 end
 
-local function stopMover()
-    if moverConn then moverConn:Disconnect(); moverConn = nil end
+local function stopSlowMover()
+    if slowMoverConn then slowMoverConn:Disconnect(); slowMoverConn = nil end
 end
 
-local function moveTo(targetPos)
+local function moveToSlow(targetPos)
     local reached = false
-    stopMover()
-    moverConn = RunService.Heartbeat:Connect(function(dt)
+    stopSlowMover()
+    slowMoverConn = RunService.Heartbeat:Connect(function(dt)
         local hrp = getHRP()
-        if not hrp or not running then reached = true; stopMover(); return end
+        if not hrp or not slowRunning then reached = true; stopSlowMover(); return end
         local diff = targetPos - hrp.Position
         local dist = diff.Magnitude
-        if dist < 2 then reached = true; stopMover(); return end
-        local step = math.min(tweenSpeed * dt, dist)
+        if dist < 2 then reached = true; stopSlowMover(); return end
+        local step = math.min(slowSpeed * dt, dist)
         hrp.CFrame = CFrame.new(hrp.Position + diff.Unit * step)
     end)
     while not reached do task.wait(0.05) end
 end
 
-local function collectLoop()
-    while running do
-        local egg = getClosestEgg()
+local function slowCollectLoop()
+    while slowRunning do
+        local egg = getClosestEggSlow()
         if egg then
-            moveTo(egg.position)
+            moveToSlow(egg.position)
         end
         task.wait(0.2)
-结束
-结束
+    end
+end
 
-maintab：切换({
-标题="开启自动捡恐龙蛋"，
-默认值=false，
-回调=函数(状态)
-运行=状态
-如果说明，则
-task.spawn(collectLoop)
-WindUI：通知({Title="已开启"，内容="自动寻找恐龙蛋"，持续时间=1})
-其他
-stopMover()
-WindUI：通知({Title="已关闭"，内容="停止自动收集"，持续时间=1})
-结束
-结束
+SlowTab:Toggle({
+    Title = "开启自动捡恐龙蛋（慢）",
+    Default = false,
+    Callback = function(state)
+        slowRunning = state
+        if state then
+            task.spawn(slowCollectLoop)
+            WindUI:Notify({Title = "已开启", Content = "平移捡蛋模式", Duration = 1})
+        else
+            stopSlowMover()
+            WindUI:Notify({Title = "已关闭", Content = "停止平移捡蛋", Duration = 1})
+        end
+    end
 })
 
-maintab：滑块({
-标题="移动速度调太快了会掉虚空[建设调到80-200]，
-值={最小值=10，最大值=500，默认值=100}，
-callback=函数(值)
-tweenSpeed=value
-结束
+SlowTab:Slider({
+    Title = "移动速度（调太快会掉虚空）",
+    Value = {Min = 10, Max = 500, Default = 100},
+    Callback = function(value)
+        slowSpeed = value
+    end
+})
+
+-- ==================== 自动捡恐龙蛋（快 - 瞬移）====================
+local FastTab = Window:Tab({
+    Title = "自动捡恐龙蛋（快）",
+    Icon = "zap",
+    IconColor = Color3.fromHex("#FFD700"),
+    IconShape = "Square",
+    Border = true
+})
+
+local fastRunning = false
+local fastInterval = 0.3
+
+local function teleportEatEgg(egg)
+    local myRoot = getMyRoot()
+    if not myRoot then return end
+    
+    pcall(function()
+        myRoot.CFrame = CFrame.new(egg.position + Vector3.new(0, 2, 0))
+    end)
+    
+    pcall(function()
+        if egg.instance:IsA("Model") then
+            for _, part in ipairs(egg.instance:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    pcall(function()
+                        firetouchinterest(myRoot, part, 0)
+                        firetouchinterest(myRoot, part, 1)
+                    end)
+                end
+            end
+        elseif egg.instance:IsA("BasePart") then
+            firetouchinterest(myRoot, egg.instance, 0)
+            firetouchinterest(myRoot, egg.instance, 1)
+        end
+    end)
+end
+
+local function fastCollectLoop()
+    while fastRunning do
+        local myRoot = getMyRoot()
+        if myRoot then
+            local eggs = getEggs()
+            if #eggs > 0 then
+                table.sort(eggs, function(a, b)
+                    return (myRoot.Position - a.position).Magnitude < (myRoot.Position - b.position).Magnitude
+                end)
+                teleportEatEgg(eggs[1])
+            end
+        end
+        task.wait(fastInterval)
+    end
+end
+
+FastTab:Toggle({
+    Title = "开启自动捡恐龙蛋（快）",
+    Default = false,
+    Callback = function(state)
+        fastRunning = state
+        if state then
+            task.spawn(fastCollectLoop)
+            WindUI:Notify({Title = "已开启", Content = "瞬移捡蛋模式", Duration = 1})
+        else
+            WindUI:Notify({Title = "已关闭", Content = "停止瞬移捡蛋", Duration = 1})
+        end
+    end
+})
+
+FastTab:Slider({
+    Title = "捡蛋间隔(秒)",
+    Value = {Min = 0.05, Max = 2, Default = 0.3},
+    Callback = function(value)
+        fastInterval = value
+    end
+})
+
+-- ==================== 瞬移吃龙 ====================
+local EatTab = Window:Tab({
+    Title = "瞬移吃龙",
+    Icon = "swords",
+    IconColor = Color3.fromHex("#FF4500"),
+    IconShape = "Square",
+    Border = true
+})
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local eating = false
+local eatInterval = 0.3
+local safeMode = true
+local autoBite = true
+local spawnProtectRadius = 80
+local minDistance = 10
+local lastPositions = {}
+
+local function isAlive(char)
+    if not char then return false end
+    local root = getRootPart(char)
+    if not root or not root.Parent then return false end
+    if not char:IsDescendantOf(Workspace) then return false end
+    return true
+end
+
+local function getSize(char)
+    local root = getRootPart(char)
+    if not root then return 0 end
+    return root.Size.Y
+end
+
+local function getSpawnPositions()
+    local spawns = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("SpawnLocation") then
+            table.insert(spawns, obj.Position)
+        end
+    end
+    if #spawns == 0 then
+        local myRoot = getMyRoot()
+        if myRoot then
+            table.insert(spawns, myRoot.Position)
+        end
+    end
+    return spawns
+end
+
+local function isInSpawnProtection(target)
+    local spawns = getSpawnPositions()
+    for _, spawnPos in ipairs(spawns) do
+        if (target.pos - spawnPos).Magnitude < spawnProtectRadius then
+            return true
+        end
+    end
+    return false
+end
+
+local function isMoving(target)
+    local key = target.name
+    local currentPos = target.pos
+    local lastPos = lastPositions[key]
+    
+    if lastPos then
+        local moved = (currentPos - lastPos).Magnitude
+        lastPositions[key] = currentPos
+        return moved > 0.5
+    else
+        lastPositions[key] = currentPos
+        return true
+    end
+end
+
+local function cleanLastPositions(targets)
+    local validNames = {}
+    for _, t in ipairs(targets) do
+        validNames[t.name] = true
+    end
+    for name in pairs(lastPositions) do
+        if not validNames[name] then
+            lastPositions[name] = nil
+        end
+    end
+end
+
+local function getEnemyPlayers()
+    local list = {}
+    local myChar = player.Character
+    local myRoot = getMyRoot()
+    local myPos = myRoot and myRoot.Position or Vector3.zero
+    
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= player and plr.Character and plr.Character ~= myChar then
+            local char = plr.Character
+            if isAlive(char) then
+                local root = getRootPart(char)
+                if root then
+                    local pos = root.Position
+                    local dist = (pos - myPos).Magnitude
+                    
+                    table.insert(list, {
+                        name = plr.Name,
+                        char = char,
+                        root = root,
+                        pos = pos,
+                        size = getSize(char),
+                        dist = dist
+                    })
+                end
+            end
+        end
+    end
+    
+    cleanLastPositions(list)
+    return list
+end
+
+local detectedEvents = nil
+local function detectBiteEvents()
+    if detectedEvents then return detectedEvents end
+    detectedEvents = {}
+    
+    local function scan(obj, depth)
+        if depth > 6 then return end
+        for _, child in ipairs(obj:GetChildren()) do
+            if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+                local name = child.Name:lower()
+                local full = child:GetFullName():lower()
+                if name:find("bite") or name:find("eat") or name:find("attack") or name:find("damage") or 
+                   name:find("combat") or name:find("interact") or name:find("action") or
+                   name:find("feed") or name:find("consume") then
+                    table.insert(detectedEvents, child)
+                elseif full:find("knit") and (name:find("rp") or name:find("re") or name:find("rf")) then
+                    table.insert(detectedEvents, child)
+                end
+            end
+            scan(child, depth + 1)
+        end
+    end
+    
+    scan(ReplicatedStorage, 0)
+    return detectedEvents
+end
+
+local function performBite(target)
+    local myRoot = getMyRoot()
+    if not myRoot then return end
+    
+    if autoBite then
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        end)
+        pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+            task.wait(0.05)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+        end)
+    end
+    
+    pcall(function()
+        firetouchinterest(myRoot, target.root, 0)
+        firetouchinterest(myRoot, target.root, 1)
+    end)
+    pcall(function()
+        for _, part in ipairs(target.char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                pcall(function()
+                    firetouchinterest(myRoot, part, 0)
+                    firetouchinterest(myRoot, part, 1)
+                end)
+            end
+        end
+    end)
+    
+    local events = detectBiteEvents()
+    for _, ev in ipairs(events) do
+        pcall(function()
+            if ev:IsA("RemoteEvent") then
+                ev:FireServer(target.char)
+                ev:FireServer(target.root)
+                ev:FireServer(target.root.Position)
+                ev:FireServer(target.char, target.root.Position)
+                ev:FireServer("Bite", target.char)
+                ev:FireServer("Attack", target.char)
+            elseif ev:IsA("RemoteFunction") then
+                ev:InvokeServer(target.char)
+            end
+        end)
+    end
+end
+
+local function teleportEat(target)
+    local myRoot = getMyRoot()
+    if not myRoot then return end
+    if not target or not target.root or not target.root.Parent then return end
+    
+    pcall(function()
+        myRoot.CFrame = target.root.CFrame
+    end)
+    
+    performBite(target)
+end
+
+local lastNotify = 0
+
+local function eatLoop()
+    while eating do
+        local myRoot = getMyRoot()
+        if myRoot then
+            local targets = getEnemyPlayers()
+            local mySize = getSize(player.Character)
+            
+            local valid = {}
+            for _, t in ipairs(targets) do
+                if isInSpawnProtection(t) then
+                    continue
+                end
+                
+                if t.dist < minDistance then
+                    continue
+                end
+                
+                if not isMoving(t) then
+                    continue
+                end
+                
+                if safeMode then
+                    if t.size < mySize then
+                        table.insert(valid, t)
+                    end
+                else
+                    table.insert(valid, t)
+                end
+            end
+            
+            if #valid > 0 then
+                table.sort(valid, function(a, b)
+                    return a.dist < b.dist
+                end)
+                
+                local closest = valid[1]
+                
+                local now = tick()
+                if now - lastNotify > 3 then
+                    lastNotify = now
+                    WindUI:Notify({
+                        Title = "锁定: " .. closest.name, 
+                        Content = "距离:" .. math.floor(closest.dist) .. " | 体型:" .. string.format("%.1f", closest.size), 
+                        Duration = 2
+                    })
+                end
+                
+                teleportEat(closest)
+            else
+                if tick() - lastNotify > 5 then
+                    lastNotify = tick()
+                    WindUI:Notify({Title = "扫描中", Content = "附近没有可吃目标", Duration = 2})
+                end
+            end
+        end
+        task.wait(eatInterval)
+    end
+end
+
+EatTab:Toggle({
+    Title = "开启瞬移吃龙",
+    Default = false,
+    Callback = function(state)
+        eating = state
+        if state then
+            detectedEvents = nil
+            detectBiteEvents()
+            task.spawn(eatLoop)
+            WindUI:Notify({Title = "已开启", Content = "排除出生点保护", Duration = 1})
+        else
+            WindUI:Notify({Title = "已关闭", Content = "停止吃龙", Duration = 1})
+        end
+    end
+})
+
+EatTab:Toggle({
+    Title = "自动按键咬（E+左键）",
+    Default = true,
+    Callback = function(state)
+        autoBite = state
+        WindUI:Notify({Title = "按键模拟", Content = state and "开启" or "关闭", Duration = 1})
+    end
+})
+
+EatTab:Toggle({
+    Title = "只吃小龙（安全）",
+    Default = true,
+    Callback = function(state)
+        safeMode = state
+        WindUI:Notify({Title = "模式切换", Content = state and "安全模式" or "全吃", Duration = 1})
+    end
+})
+
+EatTab:Slider({
+    Title = "出生点保护范围",
+    Value = {Min = 30, Max = 150, Default = 80},
+    Callback = function(value)
+        spawnProtectRadius = value
+        WindUI:Notify({Title = "保护范围", Content = tostring(value) .. "格", Duration = 1})
+    end
+})
+
+EatTab:Slider({
+    Title = "吃龙间隔(秒)",
+    Value = {Min = 0.3, Max = 5, Default = 0.3},
+    Callback = function(value)
+        eatInterval = value
+    end
 })
