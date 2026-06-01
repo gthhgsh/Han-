@@ -99,7 +99,6 @@ local CollectionService = game:GetService("CollectionService")
 local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 
--- ==================== 公共函数 ====================
 local function getHRP()
     local char = player.Character
     if not char then return nil end
@@ -173,7 +172,6 @@ local function getEggs()
     return eggs
 end
 
--- ==================== 自动捡恐龙蛋（慢 - 平移）====================
 local SlowTab = Window:Tab({
     Title = "自动捡恐龙蛋（慢）",
     Icon = "turtle",
@@ -278,7 +276,6 @@ SlowTab:Slider({
     end
 })
 
--- ==================== 自动捡恐龙蛋（快 - 瞬移）====================
 local FastTab = Window:Tab({
     Title = "自动捡恐龙蛋（快）",
     Icon = "zap",
@@ -353,7 +350,6 @@ FastTab:Slider({
     end
 })
 
--- ==================== 瞬移吃龙 ====================
 local EatTab = Window:Tab({
     Title = "瞬移吃龙",
     Icon = "swords",
@@ -669,5 +665,85 @@ EatTab:Slider({
     Value = {Min = 0.3, Max = 5, Default = 0.3},
     Callback = function(value)
         eatInterval = value
+    end
+})
+
+SlowTab:Button({
+    Title = "绕过挂机检测（防挂机）",
+    Callback = function()
+        local loaded = false
+        if loaded then return end
+        loaded = true
+
+        local Players = game:GetService("Players")
+        local RunService = game:GetService("RunService")
+        local VirtualInputManager = game:GetService("VirtualInputManager")
+        local TweenService = game:GetService("TweenService")
+        local lp = Players.LocalPlayer
+
+        local afkInterval = 30
+
+        local gui = Instance.new("ScreenGui")
+        gui.Parent = game.CoreGui
+        gui.IgnoreGuiInset = true
+        gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+        local tip = Instance.new("TextLabel")
+        tip.Size = UDim2.new(0, 320, 0, 70)
+        tip.Position = UDim2.new(0.5, 0, 0.5, 0)
+        tip.AnchorPoint = Vector2.new(0.5, 0.5)
+        tip.Text = "防挂机已启动"
+        tip.TextColor3 = Color3.fromRGB(0, 255, 128)
+        tip.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        tip.BackgroundTransparency = 0.3
+        tip.Font = Enum.Font.GothamBold
+        tip.TextSize = 32
+        tip.TextStrokeTransparency = 0
+        tip.TextStrokeColor3 = Color3.new(0, 0, 0)
+        tip.ZIndex = 999
+        tip.Parent = gui
+        Instance.new("UICorner", tip).CornerRadius = UDim.new(0, 12)
+
+        tip.BackgroundTransparency = 1
+        tip.TextTransparency = 1
+        local inTween = TweenService:Create(tip, TweenInfo.new(0.4), {BackgroundTransparency = 0.3, TextTransparency = 0})
+        local outTween = TweenService:Create(tip, TweenInfo.new(0.6), {BackgroundTransparency = 1, TextTransparency = 1})
+        inTween:Play()
+        task.delay(5, function()
+            outTween:Play()
+            outTween.Completed:Wait()
+            gui:Destroy()
+        end)
+
+        local function DoAFK()
+            local char = lp.Character
+            if not char then return end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root or not hum or hum.Health <= 0 then return end
+
+            local cam = workspace.CurrentCamera
+            if cam then
+                cam.CFrame *= CFrame.Angles(math.rad(0.15), math.rad(0.15), 0)
+            end
+
+            root.CFrame = root.CFrame * CFrame.new(0.03, 0, 0)
+            task.wait(0.05)
+            root.CFrame = root.CFrame * CFrame.new(-0.03, 0, 0)
+
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.W, false, game)
+                task.wait(0.03)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.W, false, game)
+            end)
+        end
+
+        task.spawn(function()
+            while task.wait(afkInterval) do
+                DoAFK()
+            end
+        end)
+
+        WindUI:Notify({Title = "防挂机", Content = "已启动，每30秒自动模拟移动", Duration = 2})
     end
 })
